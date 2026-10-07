@@ -27,34 +27,37 @@ class FeatureInput(BaseModel):
     coding: float
 
 # --- SAS REST API CONFIGURATION ---
-SAS_BASE_URL = os.getenv("SAS_BASE_URL", "https://viya-4yzi79h1nh.engage.sas.com/")
+SAS_BASE_URL = os.getenv("SAS_BASE_URL", "https://viya-4yzi79h1nh.engage.sas.com").rstrip("/")
 SAS_MODEL_NAME = os.getenv("SAS_MODULE_NAME", "Forest")
 SAS_USERNAME = os.getenv("SAS_USERNAME", "raj@koolkanchatravel.com")
 SAS_PASSWORD = os.getenv("SAS_PASSWORD", "Namaste@9864")
+SAS_AUTH_TOKEN = os.getenv("SAS_AUTH_TOKEN", "")
 
 def get_sas_token():
-    """Generates an OAuth Bearer token from SAS Viya using username and password."""
-    if not SAS_USERNAME or SAS_USERNAME == "your_username":
-        return None  # Skip if credentials are not set
+    """Returns SAS Bearer token if configured in .env, or attempts logon."""
+    if SAS_AUTH_TOKEN and len(SAS_AUTH_TOKEN) > 20:
+        return SAS_AUTH_TOKEN
 
-    auth_url = f"{SAS_BASE_URL}/SASLogon/oauth/token"
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/x-www-form-urlencoded"
-    }
-    payload = {
-        "grant_type": "password",
-        "username": SAS_USERNAME,
-        "password": SAS_PASSWORD
-    }
-    
-    try:
-        response = requests.post(auth_url, headers=headers, data=payload, auth=("sas.cli", ""), timeout=5)
-        response.raise_for_status()
-        return response.json().get("access_token")
-    except Exception as e:
-        print(f"Failed to authenticate with SAS: {e}")
-        return None
+    # If username is configured and not default placeholder, attempt OAuth once
+    if SAS_USERNAME and SAS_USERNAME != "your_username":
+        auth_url = f"{SAS_BASE_URL}/SASLogon/oauth/token"
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        payload = {
+            "grant_type": "password",
+            "username": SAS_USERNAME,
+            "password": SAS_PASSWORD
+        }
+        try:
+            response = requests.post(auth_url, headers=headers, data=payload, auth=("sas.cli", ""), timeout=3)
+            if response.status_code == 200:
+                return response.json().get("access_token")
+        except Exception:
+            pass
+
+    return None
 
 def fallback_prediction(features: FeatureInput) -> float:
     """Fallback in case SAS REST API is down or misconfigured."""
