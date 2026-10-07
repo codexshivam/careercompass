@@ -2,28 +2,42 @@
 
 This guide explains how to manage settings, update the underlying SAS models, and configure data for the Career Compass web application.
 
-## 1. Updating the SAS Model Coefficients
-The core logic for predicting the probability of a high salary hike is derived from a SAS Logistic Regression model.
-If you retrain the model with new data in SAS, you will need to update the coefficients.
+## 1. Running the FastAPI Backend (SAS Model Integration)
+The core logic for predicting the probability of a high salary hike now runs on a Python FastAPI backend. This allows you to integrate the actual SAS Decision Tree model via an API instead of hardcoding logic in the frontend.
 
-**File:** `src/pages/Simulator.tsx`
-**Function:** `calculateProbability(s: number[])`
-
-```typescript
-const calculateProbability = (s: number[]) => {
-  const [dash, math, aiml, big, code] = s
-  // UPDATE THESE COEFFICIENTS based on your SAS PROC LOGISTIC output
-  const z = -26.2236 
-          + 1.821 * math 
-          + 1.3547 * dash 
-          + 1.2639 * aiml 
-          + 0.9961 * big 
-          + 0.609 * code;
-
-  return Math.round((1 / (1 + Math.exp(-z))) * 100)
-}
+### Setup Backend
+Open a terminal and navigate to the `backend` directory:
+```bash
+cd backend
+pip install -r requirements.txt
 ```
-*Note: The Upskilling ROI (Skill ROI Recommendation) dynamically calculates the highest delta based on these coefficients. You do not need to update the ROI logic when you update coefficients.*
+
+### Start the Server
+Start the FastAPI server using Uvicorn:
+```bash
+uvicorn main:app --reload
+```
+The backend will run on `http://127.0.0.1:8000`. 
+
+### Integrating the Live SAS REST API (Micro Analytic Service)
+The backend is now configured to call the live **SAS Viya Micro Analytic Service (MAS)** directly, passing the user's slider values as a JSON payload and retrieving the modeled probability.
+
+To connect it to your live SAS environment, create a `.env` file inside the `backend/` directory:
+
+**File:** `backend/.env`
+```env
+SAS_BASE_URL=https://<your-sas-viya-server>.com
+SAS_USERNAME=your_username
+SAS_PASSWORD=your_password
+SAS_MODULE_NAME=your_published_model_name
+```
+
+**How it works during a Hackathon Demo:**
+- The backend automatically authenticates via `/SASLogon/oauth/token` using your `SAS_USERNAME` and `SAS_PASSWORD`, retrieving a secure Bearer token on the fly.
+- It restructures the incoming JSON input into the exact array format required by SAS MAS (`{"name": "math", "value": ...}`).
+- It sends the request to SAS and parses the `EM_EVENTPROBABILITY` output.
+- **Fail-safe Fallback:** If the API fails, times out, or you haven't set up the `.env` variables, it will automatically fallback to a local mathematical formula (`fallback_prediction`). This ensures your UI **never crashes** during your presentation!
+- **Dynamic ROI:** The backend calculates the Skill ROI by repeatedly querying the SAS model under the hood to find the best +0.5 delta, giving you true real-time SAS intelligence!
 
 ## 2. Managing Salary & Career Ladder Data
 The Salary Estimator uses baseline metrics, role premiums, and experience multipliers.
