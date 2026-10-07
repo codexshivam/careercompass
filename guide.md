@@ -39,30 +39,20 @@ SAS_MODULE_NAME=your_published_model_name
 - **Fail-safe Fallback:** If the API fails, times out, or you haven't set up the `.env` variables, it will automatically fallback to a local mathematical formula (`fallback_prediction`). This ensures your UI **never crashes** during your presentation!
 - **Dynamic ROI:** The backend calculates the Skill ROI by repeatedly querying the SAS model under the hood to find the best +0.5 delta, giving you true real-time SAS intelligence!
 
-## 2. Managing Salary & Career Ladder Data
-The Salary Estimator uses baseline metrics, role premiums, and experience multipliers.
+## 2. Managing Data, Configuration & Endpoints (All in Backend)
+All business data, configuration parameters, metadata, and formulas are centralized and served directly by the FastAPI backend (`backend/main.py`). The frontend contains **no static sample data arrays**.
 
-**File:** `src/pages/Salary.tsx`
-**Variable:** `salary` (inside the `useMemo` hook)
+### Key Endpoints in `backend/main.py`:
+- `GET /api/meta/competencies`: Provides the 5 technical competency pillars, labels, and defaults for the Simulator.
+- `GET /api/salary/config`: Serves the list of career roles and the Seniority Premium comparison chart data.
+- `POST /api/salary/estimate`: Computes estimated annual compensation based on target role, experience, seniority, and location tier.
+- `GET /api/matrix`: Serves the market demand vs. promotion impact skill matrix cards.
+- `GET /api/personas`: Serves the 4 leadership success personas.
+- `POST /predict/promotion`: Executes model prediction (SAS REST API with automated fail-safe calculation) and returns probability, verdict, and the optimal +0.5 upskilling ROI recommendation.
 
-Update the dictionaries if market data shifts:
-```typescript
-const premiums: Record<string, number> = { DA: -3.21, BA: -1.3, DE: 1.85, DS: 3.53, MLE: 0, ARCH: 10.95 }
-const seniorBumps: Record<string, number> = { DA: 0.79, BA: 0.72, DE: 2.57, DS: 5.1, MLE: 2.5, ARCH: 0 }
-// Update the baseline scalar (11.2) and experience multiplier (1.5115) here
-```
+To update compensation baseline numbers, role tiers, personas, or matrix items, edit `backend/main.py`. Any changes in the backend will immediately reflect on the frontend upon page refresh.
 
-## 3. Editing Copy and Data Constants
-All hardcoded labels, dropdown options, and copy content are centralised in the constants file.
-
-**File:** `src/data/constants.ts`
-
-- `competencyFields`: The 5 technical pillars used in the Simulator. Formatted as `[Name, Low Label, Mid Label, High Label, Default Value]`.
-- `roles`: The job titles populated in the Salary Estimator dropdown.
-- `matrixItems`: The Skill Gap / Market Demand Matrix cards content.
-- `personas`: The Senior Leadership Personas clustering results.
-
-## 4. UI/UX Design Configuration
+## 3. UI/UX Design Configuration
 Colors, breakpoints, and CSS layouts are managed globally via standard CSS variables.
 
 **File:** `src/App.css`

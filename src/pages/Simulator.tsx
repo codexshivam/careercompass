@@ -1,76 +1,164 @@
-import { useMemo, useState } from 'react'
-import { competencyFields } from '../data/constants'
+import { useEffect, useState } from 'react'
+import { fetchCompetencies, predictPromotion } from '../api'
+import type { CompetencyField } from '../types'
 
-const calculateProbability = (s: number[]) => {
-  const [dash, math, aiml, big, code] = s
-  const z = -26.2236 + 1.821 * math + 1.3547 * dash + 1.2639 * aiml + 0.9961 * big + 0.609 * code
-  return Math.round((1 / (1 + Math.exp(-z))) * 100)
+interface PredictionResult {
+  percentage: number
+  verdict: string
+  roiSkill: string | null
+  roiDelta: number
 }
 
 export function Simulator() {
-  const [scores, setScores] = useState<number[]>(competencyFields.map((field) => field[4] as number))
+  const [competencies, setCompetencies] = useState<CompetencyField[]>([])
+  const [scores, setScores] = useState<number[]>([])
+  const [loading, setLoading] = useState(false)
+  const [fetchingMeta, setFetchingMeta] = useState(true)
+  const [result, setResult] = useState<PredictionResult>({
+    percentage: 0,
+    verdict: 'Calculating...',
+    roiSkill: null,
+    roiDelta: 0,
+  })
 
-  const probability = useMemo(() => calculateProbability(scores), [scores])
+  // 1. Load competencies dynamically from Backend API
+  useEffect(() => {
+    let isMounted = true
+    fetchCompetencies()
+      .then((data) => {
+        if (!isMounted) return
+        setCompetencies(data)
+        setScores(data.map((c) => c.default))
+        setFetchingMeta(false)
+      })
+      .catch((err) => {
+        console.error('Failed to load competencies from backend:', err)
+        setFetchingMeta(false)
+      })
 
-  const bestROI = useMemo(() => {
-    const baseProb = calculateProbability(scores)
-    let bestDelta = 0
-    let bestSkill = -1
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
-    scores.forEach((score, index) => {
-      if (score < 5) {
-        const newScores = [...scores]
-        newScores[index] = Math.min(5, score + 0.5)
-        const newProb = calculateProbability(newScores)
-        const delta = newProb - baseProb
-        if (delta > bestDelta) {
-          bestDelta = delta
-          bestSkill = index
+  // 2. Debounced Prediction API call to Backend
+  useEffect(() => {
+    if (scores.length < 5) return
+
+    const controller = new AbortController()
+    const fetchPrediction = async () => {
+      setLoading(true)
+      try {
+        const [dash, math, aiml, big, code] = scores
+        const data = await predictPromotion(
+          {
+            dashboard: dash,
+            maths: math,
+            ai_ml: aiml,
+            big_data: big,
+            coding: code,
+          },
+          controller.signal
+        )
+
+        setResult({
+          percentage: data.percentage,
+          verdict: data.verdict,
+          roiSkill: data.roi_skill,
+          roiDelta: data.roi_delta,
+        })
+      } catch (error: any) {
+        if (error.name !== 'AbortError') {
+          console.error('API Error:', error)
+          setResult((prev) => ({
+            ...prev,
+            verdict: 'Server Offline - Start FastAPI Backend',
+          }))
         }
-      }
-    })
-
-    if (bestSkill !== -1 && bestDelta > 0) {
-      return {
-        skillName: competencyFields[bestSkill][0],
-        delta: bestDelta
+      } finally {
+        setLoading(false)
       }
     }
-    return null
+
+    const debounceTimer = setTimeout(() => {
+      fetchPrediction()
+    }, 200)
+
+    return () => {
+      clearTimeout(debounceTimer)
+      controller.abort()
+    }
   }, [scores])
+
+  if (fetchingMeta) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>
+        Loading competencies from server...
+      </div>
+    )
+  }
 
   return (
     <section className="layout-grid simulator-layout">
       <div className="card competency-card">
         <div className="section-heading">Competency Ratings</div>
-        {competencyFields.map((field, index) => (
-          <div className="slider-block" key={field[0] as string}>
-            <div className="slider-label"><span>{field[0] as string}</span><strong>{scores[index].toFixed(1)}</strong></div>
-            <input 
-              type="range" 
-              min="1" 
-              max="5" 
-              step="0.1" 
-              value={scores[index]} 
-              onChange={(event) => setScores(scores.map((score, i) => i === index ? Number(event.target.value) : score))} 
-              aria-label={field[0] as string} 
+        {competencies.map((field, index) => (
+          <div className="slider-block" key={field.id}>
+            <div className="slider-label">
+              <span>{field.name}</span>
+              <strong>{scores[index]?.toFixed(1) ?? '0.0'}</strong>
+            </div>
+            <input
+              type="range"
+              min="1"
+              max="5"
+              step="0.1"
+              value={scores[index] ?? field.default}
+              onChange={(event) =>
+                setScores(
+                  scores.map((score, i) =>
+                    i === index ? Number(event.target.value) : score
+                  )
+                )
+              }
+              aria-label={field.name}
             />
-            <div className="scale"><span>1.0 {field[1] as string}</span><span>3.0 {field[2] as string}</span><span>5.0 {field[3] as string}</span></div>
+            <div className="scale">
+              <span>1.0 {field.low}</span>
+              <span>3.0 {field.mid}</span>
+              <span>5.0 {field.high}</span>
+            </div>
           </div>
         ))}
       </div>
       <div className="stack">
         <div className="card metric-card">
           <div className="eyebrow">Probability</div>
-          <div className="metric-value">{probability}%</div>
-          <div className="meter"><span style={{ width: `${probability}%` }} /></div>
-          <span className="badge">✓ {probability >= 70 ? 'High Likelihood Zone' : probability >= 40 ? 'Moderate Competitive Zone' : 'Low Probability Zone'}</span>
+          <div className="metric-value">{result.percentage}%</div>
+          <div className="meter">
+            <span
+              style={{
+                width: `${result.percentage}%`,
+                opacity: loading ? 0.5 : 1,
+                transition: 'width 0.3s ease',
+              }}
+            />
+          </div>
+          <span className="badge">
+            {result.percentage >= 40 ? '✓ ' : '⚠ '}
+            {result.verdict}
+          </span>
         </div>
-        {bestROI && (
-          <div className="card insight-card">
+        {result.roiSkill && result.roiDelta > 0 && (
+          <div
+            className="card insight-card"
+            style={{ opacity: loading ? 0.5 : 1, transition: 'opacity 0.3s ease' }}
+          >
             <div className="eyebrow">Skill ROI Recommendation</div>
             <p>
-              Improving your <strong>{bestROI.skillName}</strong> by 0.5 points could increase your high-hike probability by <strong>+{bestROI.delta}%</strong>.
+              Improving your <strong>{result.roiSkill}</strong> by 0.5 points
+              could increase your high-hike probability by{' '}
+              <strong>+{result.roiDelta}%</strong>.
             </p>
           </div>
         )}
