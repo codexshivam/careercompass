@@ -34,6 +34,7 @@ SAS_MODEL_NAME = os.getenv("SAS_MODULE_NAME", "")
 SAS_USERNAME = os.getenv("SAS_USERNAME", "")
 SAS_PASSWORD = os.getenv("SAS_PASSWORD", "")
 SAS_AUTH_TOKEN = os.getenv("SAS_AUTH_TOKEN", "").strip().strip('"').strip("'")
+SAS_REFRESH_TOKEN = os.getenv("SAS_REFRESH_TOKEN", "").strip().strip('"').strip("'")
 if SAS_AUTH_TOKEN.lower().startswith("bearer "):
     SAS_AUTH_TOKEN = SAS_AUTH_TOKEN[7:].strip()
 
@@ -57,16 +58,35 @@ def _disable_sas(reason: str):
 
 
 def get_sas_token():
-    """Returns a SAS bearer token from .env, or tries a password grant. None if unavailable."""
+    """Returns a SAS bearer token from .env, or exchanges refresh token / password."""
     if not SAS_BASE_URL or not SAS_MODEL_NAME or time.time() < _sas_disabled_until:
         return None
 
-    if SAS_AUTH_TOKEN:
-        if not _looks_like_jwt(SAS_AUTH_TOKEN):
-            _disable_sas(f"SAS_AUTH_TOKEN is not a valid OAuth JWT (length {len(SAS_AUTH_TOKEN)}, should start with 'eyJ')")
-            return None
+    # 1. Direct JWT Token
+    if SAS_AUTH_TOKEN and _looks_like_jwt(SAS_AUTH_TOKEN):
         return SAS_AUTH_TOKEN
 
+    # 2. Refresh Token exchange
+    if SAS_REFRESH_TOKEN:
+        try:
+            auth_url = f"{SAS_BASE_URL}/SASLogon/oauth/token"
+            headers = {
+                "Accept": "application/json",
+                "Content-Type": "application/x-www-form-urlencoded"
+            }
+            payload = {
+                "grant_type": "refresh_token",
+                "refresh_token": SAS_REFRESH_TOKEN
+            }
+            res = requests.post(auth_url, headers=headers, data=payload, auth=("sas.cli", ""), timeout=5)
+            if res.status_code == 200:
+                return res.json().get("access_token")
+            else:
+                _disable_sas(f"Refresh token exchange failed (HTTP {res.status_code}): {res.text}")
+        except Exception as e:
+            _disable_sas(f"Refresh token error: {e}")
+
+    # 3. Direct Password Grant
     if SAS_USERNAME and SAS_PASSWORD:
         try:
             response = requests.post(
@@ -83,6 +103,7 @@ def get_sas_token():
             _disable_sas(f"SAS login unreachable: {e}")
 
     return None
+
 
 
 def fallback_prediction(features: FeatureInput) -> float:
