@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import math
 import os
+import time
 import requests
 from dotenv import load_dotenv
 
@@ -27,40 +28,65 @@ class FeatureInput(BaseModel):
     coding: float
 
 # --- SAS REST API CONFIGURATION ---
-SAS_BASE_URL = os.getenv("SAS_BASE_URL", "https://viya-4yzi79h1nh.engage.sas.com").rstrip("/")
-SAS_MODEL_NAME = os.getenv("SAS_MODULE_NAME", "Forest")
-SAS_USERNAME = os.getenv("SAS_USERNAME", "raj@koolkanchatravel.com")
-SAS_PASSWORD = os.getenv("SAS_PASSWORD", "Namaste@9864")
-SAS_AUTH_TOKEN = os.getenv("SAS_AUTH_TOKEN", "")
+# Credentials must come from backend/.env only. Never hardcode them here.
+SAS_BASE_URL = os.getenv("SAS_BASE_URL", "").rstrip("/")
+SAS_MODEL_NAME = os.getenv("SAS_MODULE_NAME", "")
+SAS_USERNAME = os.getenv("SAS_USERNAME", "")
+SAS_PASSWORD = os.getenv("SAS_PASSWORD", "")
+SAS_AUTH_TOKEN = os.getenv("SAS_AUTH_TOKEN", "").strip().strip('"').strip("'")
+if SAS_AUTH_TOKEN.lower().startswith("bearer "):
+    SAS_AUTH_TOKEN = SAS_AUTH_TOKEN[7:].strip()
+
+# Circuit breaker: after an auth failure, skip SAS calls for a while instead of
+# failing 6 times per request (1 base + 5 ROI scenarios).
+SAS_COOLDOWN_SECONDS = 300
+_sas_disabled_until = 0.0
+_sas_last_error = ""
+
+
+def _looks_like_jwt(token: str) -> bool:
+    return token.startswith("eyJ") and token.count(".") == 2 and len(token) > 100
+
+
+def _disable_sas(reason: str):
+    global _sas_disabled_until, _sas_last_error
+    if time.time() >= _sas_disabled_until:
+        print(f"[SAS] {reason} -> using fallback model for {SAS_COOLDOWN_SECONDS // 60} min")
+    _sas_disabled_until = time.time() + SAS_COOLDOWN_SECONDS
+    _sas_last_error = reason
+
 
 def get_sas_token():
-    """Returns SAS Bearer token if configured in .env, or attempts logon."""
-    if SAS_AUTH_TOKEN and len(SAS_AUTH_TOKEN) > 20:
+    """Returns a SAS bearer token from .env, or tries a password grant. None if unavailable."""
+    if not SAS_BASE_URL or not SAS_MODEL_NAME or time.time() < _sas_disabled_until:
+        return None
+
+    if SAS_AUTH_TOKEN:
+        if not _looks_like_jwt(SAS_AUTH_TOKEN):
+            _disable_sas(f"SAS_AUTH_TOKEN is not a valid OAuth JWT (length {len(SAS_AUTH_TOKEN)}, should start with 'eyJ')")
+            return None
         return SAS_AUTH_TOKEN
 
-    # If username is configured and not default placeholder, attempt OAuth once
-    if SAS_USERNAME and SAS_USERNAME != "your_username":
-        auth_url = f"{SAS_BASE_URL}/SASLogon/oauth/token"
-        headers = {
-            "Accept": "application/json",
-            "Content-Type": "application/x-www-form-urlencoded"
-        }
-        payload = {
-            "grant_type": "password",
-            "username": SAS_USERNAME,
-            "password": SAS_PASSWORD
-        }
+    if SAS_USERNAME and SAS_PASSWORD:
         try:
-            response = requests.post(auth_url, headers=headers, data=payload, auth=("sas.cli", ""), timeout=3)
+            response = requests.post(
+                f"{SAS_BASE_URL}/SASLogon/oauth/token",
+                headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"},
+                data={"grant_type": "password", "username": SAS_USERNAME, "password": SAS_PASSWORD},
+                auth=("sas.cli", ""),
+                timeout=3,
+            )
             if response.status_code == 200:
                 return response.json().get("access_token")
-        except Exception:
-            pass
+            _disable_sas(f"SAS password login rejected (HTTP {response.status_code})")
+        except Exception as e:
+            _disable_sas(f"SAS login unreachable: {e}")
 
     return None
 
+
 def fallback_prediction(features: FeatureInput) -> float:
-    """Fallback in case SAS REST API is down or misconfigured."""
+    """Local logistic model used when SAS MAS is unavailable."""
     z = (-26.2236 
          + 1.821 * features.maths 
          + 1.3547 * features.dashboard 
@@ -69,22 +95,21 @@ def fallback_prediction(features: FeatureInput) -> float:
          + 0.609 * features.coding)
     return 1 / (1 + math.exp(-z))
 
-def get_sas_prediction(features: FeatureInput, token: str) -> float:
+
+def get_sas_prediction(features: FeatureInput, token: str):
     """
     Calls the SAS Viya Micro Analytic Service (MAS) REST API.
+    Returns (probability, source) where source is "sas" or "fallback".
     """
-    if not token or "your-sas-viya-server.com" in SAS_BASE_URL:
-        return fallback_prediction(features)
+    if not token or time.time() < _sas_disabled_until:
+        return fallback_prediction(features), "fallback"
 
     url = f"{SAS_BASE_URL}/microanalyticScore/modules/{SAS_MODEL_NAME}/steps/score"
-    
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/vnd.sas.microanalytic.module.step.input+json",
         "Accept": "application/vnd.sas.microanalytic.module.step.output+json"
     }
-    
-    # Payload format required by SAS MAS
     payload = {
         "inputs": [
             {"name": "math", "value": features.maths},
@@ -94,24 +119,41 @@ def get_sas_prediction(features: FeatureInput, token: str) -> float:
             {"name": "code", "value": features.coding}
         ]
     }
-    
+
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=3)
+        if response.status_code in (401, 403):
+            _disable_sas(f"SAS rejected the token (HTTP {response.status_code}); it is invalid or expired")
+            return fallback_prediction(features), "fallback"
+        if response.status_code == 404:
+            _disable_sas(f"SAS module '{SAS_MODEL_NAME}' not found in Micro Analytic Service (HTTP 404)")
+            return fallback_prediction(features), "fallback"
         response.raise_for_status()
-        data = response.json()
-        
-        # Extract probability (Looking for EM_EVENTPROBABILITY or P_*1)
-        outputs = data.get("outputs", [])
-        for out in outputs:
+
+        for out in response.json().get("outputs", []):
             name = out.get("name", "").upper()
             if name == "EM_EVENTPROBABILITY" or (name.startswith("P_") and name.endswith("1")):
-                return float(out.get("value", 0.0))
-                
-        return fallback_prediction(features)
-        
+                return float(out.get("value", 0.0)), "sas"
+
+        _disable_sas("SAS response had no EM_EVENTPROBABILITY / P_*1 output")
+        return fallback_prediction(features), "fallback"
+
     except Exception as e:
-        print(f"SAS REST API Error: {e}")
-        return fallback_prediction(features)
+        _disable_sas(f"SAS scoring call failed: {e}")
+        return fallback_prediction(features), "fallback"
+
+
+@app.get("/api/health/sas")
+def sas_health():
+    """Shows whether predictions are coming from live SAS or the fallback model."""
+    return {
+        "configured": bool(SAS_BASE_URL and SAS_MODEL_NAME and (SAS_AUTH_TOKEN or SAS_USERNAME)),
+        "token_format_valid": _looks_like_jwt(SAS_AUTH_TOKEN) if SAS_AUTH_TOKEN else None,
+        "sas_active": time.time() >= _sas_disabled_until,
+        "cooldown_seconds_left": max(0, int(_sas_disabled_until - time.time())),
+        "last_error": _sas_last_error or None,
+    }
+
 
 @app.post("/predict/promotion")
 async def predict_promotion(features: FeatureInput):
@@ -119,7 +161,7 @@ async def predict_promotion(features: FeatureInput):
     token = get_sas_token()
 
     # 1. Base Probability Calculation via SAS API
-    base_prob = get_sas_prediction(features, token)
+    base_prob, source = get_sas_prediction(features, token)
     percentage = int(round(base_prob * 100))
     
     # 2. Verdict Logic
@@ -163,7 +205,7 @@ async def predict_promotion(features: FeatureInput):
             )
             
             # Predict with the +0.5 boost reusing the same token
-            new_prob = get_sas_prediction(hypo_features, token)
+            new_prob, _ = get_sas_prediction(hypo_features, token)
             delta = int(round(new_prob * 100)) - percentage
             
             if delta > best_delta:
@@ -175,7 +217,8 @@ async def predict_promotion(features: FeatureInput):
         "percentage": percentage,
         "verdict": verdict,
         "roi_skill": best_skill,
-        "roi_delta": best_delta
+        "roi_delta": best_delta,
+        "source": source
     }
 
 
