@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Career Compass</title>
+  
+  <!-- Fonts: Geist & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS & Lucide Icons -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Geist', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+          },
+          colors: {
+            surface: {
+              DEFAULT: '#fbf8fc',
+              dim: '#dcd9dd',
+              bright: '#fbf8fc',
+              lowest: '#ffffff',
+              low: '#f6f2f7',
+              container: '#f0edf1',
+              high: '#eae7eb',
+              highest: '#e4e1e6',
+            },
+            charcoal: {
+              DEFAULT: '#0a0a0a',
+              pure: '#000000',
+              deep: '#18181b',
+              surface: '#1b1b1e',
+              variant: '#444748',
+              inverse: '#303033',
+            },
+            line: {
+              DEFAULT: '#e4e4e7',
+              dim: '#e4e1e6',
+              mid: '#c4c7c7',
+              strong: '#747878',
+            }
+          },
+          borderRadius: {
+            sm: '0.125rem',
+            DEFAULT: '0.25rem',
+            md: '0.375rem',
+            lg: '0.5rem',
+            xl: '0.75rem',
+          },
+          letterSpacing: {
+            tighter: '-0.03em',
+            tight: '-0.02em',
+            normal: '-0.005em',
+            badge: '0.04em',
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    :root {
+      --bg-surface: #fbf8fc;
+      --border-color: #e4e4e7;
+      --text-primary: #1b1b1e;
+      --text-muted: #71717a;
+    }
+
+    body {
+      font-family: 'Geist', sans-serif;
+      background-color: #fbf8fc;
+      color: #1b1b1e;
+      letter-spacing: -0.005em;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Range slider custom styling - Monochrome */
+    input[type=range] {
+      -webkit-appearance: none;
+      background: #e4e4e7;
+      border-radius: 2px;
+      height: 4px;
+      outline: none;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 2px;
+      background: #0a0a0a;
+      cursor: pointer;
+      border: 1px solid #000000;
+      transition: transform 0.1s ease;
+    }
+
+    input[type=range]::-webkit-slider-thumb:hover {
+      transform: scale(1.15);
+      background: #27272a;
+    }
+
+    input[type=range]:focus::-webkit-slider-thumb {
+      outline: 2px solid rgba(10, 10, 10, 0.2);
+    }
+
+    /* Minimal borders & subtle elevation */
+    .card-border {
+      border: 1px solid #e4e4e7;
+      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.03), 0 1px 2px -1px rgba(0, 0, 0, 0.03);
+    }
+
+    .card-border-dark {
+      border: 1px solid #27272a;
+    }
+
+    /* Technical Badge */
+    .tech-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.6875rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.25rem;
+      border: 1px solid #e4e4e7;
+      background: #f6f2f7;
+      color: #1b1b1e;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+    }
+
+    .tech-badge-dark {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.6875rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.25rem;
+      border: 1px solid #3f3f46;
+      background: #18181b;
+      color: #f4f4f5;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+    }
+
+    /* Interactive state scale shift */
+    .btn-press:active {
+      transform: scale(0.99);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-black selection:text-white">
+
+  <!-- Top Global Navigation Bar -->
+  <header class="bg-white border-b border-line sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Logo & Identity -->
+      <div class="flex items-center">
+        <span class="font-semibold text-sm tracking-tight text-black uppercase">Career Compass</span>
+      </div>
+      
+      <!-- Nav Tabs (Desktop) -->
+      <nav class="hidden md:flex items-center gap-1 bg-[#f0edf1] p-1 rounded border border-line text-xs font-mono">
+        <button onclick="switchTab('simulator')" id="btn-tab-simulator" class="tab-btn px-3 py-1.5 rounded bg-black text-white transition font-medium">
+          PROMOTION SIMULATOR
+        </button>
+        <button onclick="switchTab('salary')" id="btn-tab-salary" class="tab-btn px-3 py-1.5 rounded text-zinc-600 hover:text-black transition font-medium">
+          SALARY ESTIMATOR
+        </button>
+        <button onclick="switchTab('matrix')" id="btn-tab-matrix" class="tab-btn px-3 py-1.5 rounded text-zinc-600 hover:text-black transition font-medium">
+          SKILL MATRIX
+        </button>
+        <button onclick="switchTab('personas')" id="btn-tab-personas" class="tab-btn px-3 py-1.5 rounded text-zinc-600 hover:text-black transition font-medium">
+          LEADERSHIP PERSONAS
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Viewport Frame -->
+  <main class="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+    
+    <!-- Mobile Tabs Selector -->
+    <div class="md:hidden mb-6">
+      <label class="block text-xs font-mono uppercase text-zinc-500 mb-1">Select Module</label>
+      <select onchange="switchTab(this.value)" class="w-full bg-white border border-line rounded px-3 py-2 text-xs font-mono">
+        <option value="simulator">Promotion Simulator</option>
+        <option value="salary">Salary Estimator</option>
+        <option value="matrix">Skill Matrix</option>
+        <option value="personas">Leadership Personas</option>
+      </select>
+    </div>
+
+    <!-- TAB 1: PROMOTION SIMULATOR -->
+    <section id="tab-simulator" class="tab-content space-y-6">
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Interactive Sliders (7 cols) -->
+        <div class="lg:col-span-7 bg-white p-6 rounded card-border space-y-5">
+          <div class="border-b border-line pb-3">
+            <h2 class="text-sm font-semibold text-black uppercase tracking-tight">Competency Ratings</h2>
+          </div>
+
+          <!-- Slider 1: Dashboard & Storytelling -->
+          <div class="space-y-1.5 p-3 rounded bg-surface-low border border-line">
+            <div class="flex justify-between items-center text-xs">
+              <span class="font-medium text-black">Dashboard & Storytelling</span>
+              <span id="val-dash" class="font-mono font-semibold text-black">4.0</span>
+            </div>
+            <input type="range" id="slider-dash" min="1.0" max="5.0" step="0.1" value="4.0" oninput="updateSim()" class="w-full">
+            <div class="flex justify-between text-[11px] text-zinc-500 font-mono">
+              <span>1.0 Basic visual</span>
+              <span>3.0 Functional</span>
+              <span>5.0 C-Suite Narrative</span>
+            </div>
+          </div>
+
+          <!-- Slider 2: Maths & Stats -->
+          <div class="space-y-1.5 p-3 rounded bg-surface-low border border-line">
+            <div class="flex justify-between items-center text-xs">
+              <span class="font-medium text-black">Maths & Statistical Rigor</span>
+              <span id="val-math" class="font-mono font-semibold text-black">4.0</span>
+            </div>
+            <input type="range" id="slider-math" min="1.0" max="5.0" step="0.1" value="4.0" oninput="updateSim()" class="w-full">
+            <div class="flex justify-between text-[11px] text-zinc-500 font-mono">
+              <span>1.0 Formulas</span>
+              <span>3.0 Regression</span>
+              <span>5.0 Causal Inference</span>
+            </div>
+          </div>
+
+          <!-- Slider 3: AI & ML -->
+          <div class="space-y-1.5 p-3 rounded bg-surface-low border border-line">
+            <div class="flex justify-between items-center text-xs">
+              <span class="font-medium text-black">AI & Machine Learning</span>
+              <span id="val-aiml" class="font-mono font-semibold text-black">4.0</span>
+            </div>
+            <input type="range" id="slider-aiml" min="1.0" max="5.0" step="0.1" value="4.0" oninput="updateSim()" class="w-full">
+            <div class="flex justify-between text-[11px] text-zinc-500 font-mono">
+              <span>1.0 Baselines</span>
+              <span>3.0 Feature Eng.</span>
+              <span>5.0 Production GenAI/NLP</span>
+            </div>
+          </div>
+
+          <!-- Slider 4: Big Data -->
+          <div class="space-y-1.5 p-3 rounded bg-surface-low border border-line">
+            <div class="flex justify-between items-center text-xs">
+              <span class="font-medium text-black">Big Data Architecture</span>
+              <span id="val-big" class="font-mono font-semibold text-black">3.5</span>
+            </div>
+            <input type="range" id="slider-big" min="1.0" max="5.0" step="0.1" value="3.5" oninput="updateSim()" class="w-full">
+            <div class="flex justify-between text-[11px] text-zinc-500 font-mono">
+              <span>1.0 Local</span>
+              <span>3.0 Distributed SQL</span>
+              <span>5.0 Spark / CAS Tuning</span>
+            </div>
+          </div>
+
+          <!-- Slider 5: Coding -->
+          <div class="space-y-1.5 p-3 rounded bg-surface-low border border-line">
+            <div class="flex justify-between items-center text-xs">
+              <span class="font-medium text-black">Core Programming (Python/SQL/SAS)</span>
+              <span id="val-code" class="font-mono font-semibold text-black">4.2</span>
+            </div>
+            <input type="range" id="slider-code" min="1.0" max="5.0" step="0.1" value="4.2" oninput="updateSim()" class="w-full">
+            <div class="flex justify-between text-[11px] text-zinc-500 font-mono">
+              <span>1.0 Scripting</span>
+              <span>3.0 Clean Modular</span>
+              <span>5.0 Enterprise CI/CD</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Metric Output Cards (5 cols) -->
+        <div class="lg:col-span-5 space-y-6 flex flex-col">
+          
+          <!-- Probability Card -->
+          <div class="bg-white p-6 rounded card-border text-center space-y-3">
+            <div class="flex items-center justify-center border-b border-line pb-2">
+              <span class="text-xs font-mono uppercase tracking-badge text-zinc-500">Probability</span>
+            </div>
+
+            <div class="py-2">
+              <span id="prob-display" class="text-6xl font-semibold tracking-tighter text-black font-mono">--%</span>
+            </div>
+
+            <!-- Minimal Progress Bar -->
+            <div class="w-full bg-[#f0edf1] rounded h-2 overflow-hidden border border-line">
+              <div id="prob-meter" class="h-full bg-black transition-all duration-300" style="width: 50%;"></div>
+            </div>
+
+            <div class="pt-2">
+              <span id="verdict-badge" class="tech-badge">
+                <i data-lucide="check" class="w-3 h-3"></i>
+                <span id="verdict-text">High Likelihood Zone</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: SALARY ESTIMATOR -->
+    <section id="tab-salary" class="tab-content hidden space-y-6">
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Controls (5 cols) -->
+        <div class="lg:col-span-5 bg-white p-6 rounded card-border space-y-5">
+          <div class="border-b border-line pb-3">
+            <h2 class="text-sm font-semibold text-black uppercase tracking-tight">Parameters</h2>
+          </div>
+
+          <div class="space-y-1.5">
+            <label class="text-xs font-mono uppercase text-zinc-600">Target Role</label>
+            <select id="sel-role" onchange="updateSalary()" class="w-full bg-surface-low border border-line rounded px-3 py-2.5 text-xs font-mono focus:border-black focus:outline-none">
+              <option value="DA">Data Analyst (Junior Base: ₹5.0L)</option>
+              <option value="BA">Business Analyst (Junior Base: ₹8.3L)</option>
+              <option value="DE">Data Engineer (Junior Base: ₹10.9L)</option>
+              <option value="DS" selected>Data Scientist (Junior Base: ₹12.8L)</option>
+              <option value="MLE">Machine Learning Engineer (Junior Base: ₹9.1L)</option>
+              <option value="ARCH">Data Architect (Senior Base: ₹24.2L)</option>
+            </select>
+          </div>
+
+          <div class="space-y-1.5 p-3 rounded bg-surface-low border border-line">
+            <div class="flex justify-between items-center text-xs">
+              <span class="font-medium text-black">Years of Experience</span>
+              <span id="val-exp" class="font-mono font-semibold text-black">3.0 yrs</span>
+            </div>
+            <input type="range" id="slider-exp" min="0" max="15" step="0.5" value="3.0" oninput="updateSalary()" class="w-full">
+            <div class="flex justify-between text-[11px] text-zinc-500 font-mono">
+              <span>0 (Entry)</span>
+              <span>5 (Mid)</span>
+              <span>15 (Executive)</span>
+            </div>
+          </div>
+
+          <div class="space-y-1.5">
+            <label class="text-xs font-mono uppercase text-zinc-600">Seniority</label>
+            <div class="grid grid-cols-2 gap-2">
+              <button type="button" onclick="setSeniority(false)" id="btn-sen-jr" class="btn-press px-3 py-2 rounded border text-xs font-mono uppercase transition bg-black text-white border-black font-semibold">
+                Associate / Jr
+              </button>
+              <button type="button" onclick="setSeniority(true)" id="btn-sen-sr" class="btn-press px-3 py-2 rounded border text-xs font-mono uppercase transition bg-white text-zinc-700 border-line hover:bg-zinc-50">
+                Senior / Lead
+              </button>
+            </div>
+          </div>
+
+          <div class="space-y-1.5">
+            <label class="text-xs font-mono uppercase text-zinc-600">Location</label>
+            <select id="sel-geo" onchange="updateSalary()" class="w-full bg-surface-low border border-line rounded px-3 py-2.5 text-xs font-mono focus:border-black focus:outline-none">
+              <option value="metro">Top 7 Metro Hubs (Bengaluru, NCR, Mumbai, Hyderabad)</option>
+              <option value="regional">Tier-2 / Regional Tech Hubs</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Output Cards (7 cols) -->
+        <div class="lg:col-span-7 space-y-6">
+          <div class="bg-white p-6 rounded card-border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+            <div class="space-y-1">
+              <div class="text-xs font-mono uppercase tracking-badge text-zinc-500">Estimated Annual Compensation</div>
+              <div id="salary-display" class="text-4xl sm:text-5xl font-semibold tracking-tighter text-black font-mono">
+                ₹17.3L <span class="text-sm font-normal text-zinc-500">/ annum</span>
+              </div>
+              <div id="salary-breakdown" class="text-xs font-mono text-zinc-600 pt-1">
+                Base: ₹11.2L + Exp (+₹1.51L/yr): ₹4.5L + Role: ₹3.5L
+              </div>
+            </div>
+          </div>
+
+          <!-- Chart.js Visualization -->
+          <div class="bg-white p-6 rounded card-border space-y-3">
+            <div class="border-b border-line pb-3">
+              <h3 class="text-xs font-semibold text-black uppercase tracking-tight">Seniority Premium by Role</h3>
+              <p class="text-[11px] font-mono text-zinc-500">Title increment over junior baseline (₹ Lakhs)</p>
+            </div>
+            <div class="h-60 relative">
+              <canvas id="seniorityChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB 3: SKILL MATRIX -->
+    <section id="tab-matrix" class="tab-content hidden space-y-6">
+
+      <!-- 2x2 Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <!-- Q1: Differentiators -->
+        <div class="bg-white p-6 rounded card-border space-y-3 relative">
+          <div class="flex items-center justify-between">
+            <span class="tech-badge">HIGH DIFFERENTIATOR</span>
+            <span class="text-xs font-mono font-semibold text-black">TOP IMPACT</span>
+          </div>
+          <h2 class="text-base font-semibold text-black tracking-tight">Data Visualization & Storytelling</h2>
+          
+          <div class="grid grid-cols-2 gap-2 text-xs font-mono py-1">
+            <div class="p-2.5 rounded bg-surface-low border border-line">
+              <span class="text-zinc-500 uppercase text-[10px]">Market Demand:</span>
+              <div class="font-semibold text-black text-xs mt-0.5">12% (Moderate)</div>
+            </div>
+            <div class="p-2.5 rounded bg-surface-low border border-line">
+              <span class="text-zinc-500 uppercase text-[10px]">Promotion Impact:</span>
+              <div class="font-semibold text-black text-xs mt-0.5">Very High</div>
+            </div>
+          </div>
+
+          <p class="text-xs text-zinc-600 leading-relaxed pt-1">
+            Often under-emphasized in job descriptions, but one of the strongest internal differentiators for executive visibility and top-tier promotions.
+          </p>
+        </div>
+
+        <!-- Q2: Core Technical Foundation -->
+        <div class="bg-white p-6 rounded card-border space-y-3 relative">
+          <div class="flex items-center justify-between">
+            <span class="tech-badge">CORE FOUNDATION</span>
+            <span class="text-xs font-mono font-semibold text-black">HIGH DEMAND & PAY</span>
+          </div>
+          <h2 class="text-base font-semibold text-black tracking-tight">Maths, Statistics & AI/ML Modeling</h2>
+          
+          <div class="grid grid-cols-2 gap-2 text-xs font-mono py-1">
+            <div class="p-2.5 rounded bg-surface-low border border-line">
+              <span class="text-zinc-500 uppercase text-[10px]">Market Demand:</span>
+              <div class="font-semibold text-black text-xs mt-0.5">16% (Stats) / 14% (AI)</div>
+            </div>
+            <div class="p-2.5 rounded bg-surface-low border border-line">
+              <span class="text-zinc-500 uppercase text-[10px]">Promotion Impact:</span>
+              <div class="font-semibold text-black text-xs mt-0.5">High Multiplier</div>
+            </div>
+          </div>
+
+          <p class="text-xs text-zinc-600 leading-relaxed pt-1">
+            Deep mathematical and statistical intuition remains the primary technical driver for advancing into senior data science positions.
+          </p>
+        </div>
+
+        <!-- Q3: Supporting Tools -->
+        <div class="bg-white p-6 rounded card-border space-y-3 relative">
+          <div class="flex items-center justify-between">
+            <span class="tech-badge">SUPPORTING SKILL</span>
+            <span class="text-xs font-mono text-zinc-500">MODERATE ROI</span>
+          </div>
+          <h2 class="text-base font-semibold text-black tracking-tight">Big Data Infrastructure (Hadoop/Spark)</h2>
+          
+          <div class="grid grid-cols-2 gap-2 text-xs font-mono py-1">
+            <div class="p-2.5 rounded bg-surface-low border border-line">
+              <span class="text-zinc-500 uppercase text-[10px]">Market Demand:</span>
+              <div class="font-semibold text-black text-xs mt-0.5">13%</div>
+            </div>
+            <div class="p-2.5 rounded bg-surface-low border border-line">
+              <span class="text-zinc-500 uppercase text-[10px]">Promotion Impact:</span>
+              <div class="font-semibold text-zinc-700 text-xs mt-0.5">Moderate</div>
+            </div>
+          </div>
+
+          <p class="text-xs text-zinc-600 leading-relaxed pt-1">
+            Essential for infrastructure and engineering workflows, but secondary for promotion velocity compared to core modeling and communication.
+          </p>
+        </div>
+
+        <!-- Q4: Baseline Table Stakes -->
+        <div class="bg-white p-6 rounded card-border space-y-3 relative">
+          <div class="flex items-center justify-between">
+            <span class="tech-badge">TABLE STAKES</span>
+            <span class="text-xs font-mono text-zinc-500">BASELINE</span>
+          </div>
+          <h2 class="text-base font-semibold text-black tracking-tight">Coding (Python, SQL, SAS, R)</h2>
+          
+          <div class="grid grid-cols-2 gap-2 text-xs font-mono py-1">
+            <div class="p-2.5 rounded bg-surface-low border border-line">
+              <span class="text-zinc-500 uppercase text-[10px]">Market Demand:</span>
+              <div class="font-semibold text-black text-xs mt-0.5">44% (Most Common)</div>
+            </div>
+            <div class="p-2.5 rounded bg-surface-low border border-line">
+              <span class="text-zinc-500 uppercase text-[10px]">Promotion Impact:</span>
+              <div class="font-semibold text-zinc-700 text-xs mt-0.5">Baseline Requirement</div>
+            </div>
+          </div>
+
+          <p class="text-xs text-zinc-600 leading-relaxed pt-1">
+            Mandatory hygiene skill required across all roles; universal baseline expectation that alone does not drive top differentiation.
+          </p>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB 4: LEADERSHIP PERSONAS -->
+    <section id="tab-personas" class="tab-content hidden space-y-6">
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        
+        <!-- Persona 1 -->
+        <div class="bg-white p-5 rounded card-border space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="font-mono text-xs font-bold px-2 py-0.5 bg-black text-white rounded">01</span>
+            <span class="tech-badge">96% Win Rate</span>
+          </div>
+          <h2 class="text-sm font-semibold text-black tracking-tight">The Driven Explorer</h2>
+          <div class="p-3 rounded bg-surface-low border border-line text-xs text-zinc-600 leading-relaxed">
+            Combines rigorous execution discipline with high curiosity and decisive stakeholder leadership.
+          </div>
+        </div>
+
+        <!-- Persona 2 -->
+        <div class="bg-white p-5 rounded card-border space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="font-mono text-xs font-bold px-2 py-0.5 bg-zinc-800 text-white rounded">02</span>
+            <span class="tech-badge">71% Win Rate</span>
+          </div>
+          <h2 class="text-sm font-semibold text-black tracking-tight">The Diplomatic Champion</h2>
+          <div class="p-3 rounded bg-surface-low border border-line text-xs text-zinc-600 leading-relaxed">
+            Exceptional relationship building and stakeholder empathy; highly effective when paired with deep technical delivery anchors.
+          </div>
+        </div>
+
+        <!-- Persona 3 -->
+        <div class="bg-white p-5 rounded card-border space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="font-mono text-xs font-bold px-2 py-0.5 bg-zinc-600 text-white rounded">03</span>
+            <span class="tech-badge">39% Win Rate</span>
+          </div>
+          <h2 class="text-sm font-semibold text-black tracking-tight">The Quiet Specialist</h2>
+          <div class="p-3 rounded bg-surface-low border border-line text-xs text-zinc-600 leading-relaxed">
+            Technically thorough and detail-oriented, but encounters resistance in high-ambiguity client escalations.
+          </div>
+        </div>
+
+        <!-- Persona 4 -->
+        <div class="bg-white p-5 rounded card-border space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="font-mono text-xs font-bold px-2 py-0.5 bg-zinc-400 text-black rounded">04</span>
+            <span class="tech-badge">10% Win Rate</span>
+          </div>
+          <h2 class="text-sm font-semibold text-black tracking-tight">The Developing Contributor</h2>
+          <div class="p-3 rounded bg-surface-low border border-line text-xs text-zinc-600 leading-relaxed">
+            Experiences delivery inconsistency or friction when adapting to rapid project scope changes; benefits from structured mentorship.
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Application Logic Scripts -->
+  <script>
+    // Tab Navigation
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      const activeContent = document.getElementById('tab-' + tabId);
+      if(activeContent) activeContent.classList.remove('hidden');
+
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('bg-black', 'text-white');
+        btn.classList.add('text-zinc-600');
+      });
+
+      const activeBtn = document.getElementById('btn-tab-' + tabId);
+      if(activeBtn) {
+        activeBtn.classList.remove('text-zinc-600');
+        activeBtn.classList.add('bg-black', 'text-white');
+      }
+
+      if(tabId === 'salary') {
+        renderSeniorityChart();
+      }
+    }
+
+    // Logistic Formula
+    function calcLogit(m, d, a, b, c) {
+      const z = -26.2236 + (1.8210 * m) + (1.3547 * d) + (1.2639 * a) + (0.9961 * b) + (0.6090 * c);
+      return 1.0 / (1.0 + Math.exp(-z));
+    }
+
+    function updateSim() {
+      const dash = parseFloat(document.getElementById('slider-dash').value);
+      const math = parseFloat(document.getElementById('slider-math').value);
+      const aiml = parseFloat(document.getElementById('slider-aiml').value);
+      const big  = parseFloat(document.getElementById('slider-big').value);
+      const code = parseFloat(document.getElementById('slider-code').value);
+
+      document.getElementById('val-dash').innerText = dash.toFixed(1);
+      document.getElementById('val-math').innerText = math.toFixed(1);
+      document.getElementById('val-aiml').innerText = aiml.toFixed(1);
+      document.getElementById('val-big').innerText  = big.toFixed(1);
+      document.getElementById('val-code').innerText = code.toFixed(1);
+
+      const baseProb = calcLogit(math, dash, aiml, big, code);
+      const pct = Math.round(baseProb * 100);
+
+      document.getElementById('prob-display').innerText = pct + '%';
+      document.getElementById('prob-meter').style.width = pct + '%';
+
+      // Badge status update
+      const badgeText = document.getElementById('verdict-text');
+      if(pct >= 70) {
+        badgeText.innerText = 'High Likelihood Zone (>= 70%)';
+      } else if(pct >= 40) {
+        badgeText.innerText = 'Moderate Competitive Zone (40-69%)';
+      } else {
+        badgeText.innerText = 'Low Probability Zone (< 40%)';
+      }
+
+      lucide.createIcons();
+    }
+
+    function resetSliders() {
+      document.getElementById('slider-dash').value = 4.0;
+      document.getElementById('slider-math').value = 4.0;
+      document.getElementById('slider-aiml').value = 4.0;
+      document.getElementById('slider-big').value = 3.5;
+      document.getElementById('slider-code').value = 4.2;
+      updateSim();
+    }
+
+    // Salary Estimator Logic
+    let isSenior = false;
+    function setSeniority(val) {
+      isSenior = val;
+      const btnJr = document.getElementById('btn-sen-jr');
+      const btnSr = document.getElementById('btn-sen-sr');
+      if(val) {
+        btnSr.className = 'btn-press px-3 py-2 rounded border text-xs font-mono uppercase transition bg-black text-white border-black font-semibold';
+        btnJr.className = 'btn-press px-3 py-2 rounded border text-xs font-mono uppercase transition bg-white text-zinc-700 border-line hover:bg-zinc-50';
+      } else {
+        btnJr.className = 'btn-press px-3 py-2 rounded border text-xs font-mono uppercase transition bg-black text-white border-black font-semibold';
+        btnSr.className = 'btn-press px-3 py-2 rounded border text-xs font-mono uppercase transition bg-white text-zinc-700 border-line hover:bg-zinc-50';
+      }
+      updateSalary();
+    }
+
+    function updateSalary() {
+      const exp = parseFloat(document.getElementById('slider-exp').value);
+      document.getElementById('val-exp').innerText = exp.toFixed(1) + ' yrs';
+
+      const role = document.getElementById('sel-role').value;
+      const geo = document.getElementById('sel-geo').value;
+
+      let base = 11.20;
+      let expAdd = 1.5115 * exp;
+      let rolePremium = 0.0;
+      let seniorBump = 0.0;
+
+      if(role === 'DA') {
+        rolePremium = -3.21;
+        seniorBump = isSenior ? 0.79 : 0.0;
+      } else if(role === 'BA') {
+        rolePremium = -1.30;
+        seniorBump = isSenior ? 0.72 : 0.0;
+      } else if(role === 'DE') {
+        rolePremium = 1.85;
+        seniorBump = isSenior ? 2.57 : 0.0;
+      } else if(role === 'DS') {
+        rolePremium = 3.53;
+        seniorBump = isSenior ? 5.10 : 0.0;
+      } else if(role === 'MLE') {
+        rolePremium = 0.0;
+        seniorBump = isSenior ? 2.50 : 0.0;
+      } else if(role === 'ARCH') {
+        rolePremium = 10.95;
+        seniorBump = 0.0;
+      }
+
+      let total = base + expAdd + rolePremium + seniorBump;
+      if(geo === 'regional' && exp < 5.0) {
+        total *= 0.78;
+      }
+
+      total = Math.max(3.5, total);
+
+      document.getElementById('salary-display').innerHTML = `₹${total.toFixed(1)}L <span class="text-sm font-normal text-zinc-500 font-sans">/ annum</span>`;
+      document.getElementById('salary-breakdown').innerText = 
+        `Base: ₹${base.toFixed(1)}L + Exp: ₹${expAdd.toFixed(1)}L + Track: ₹${rolePremium.toFixed(1)}L + Seniority: ₹${seniorBump.toFixed(1)}L`;
+    }
+
+    // Chart.js - Strict Monochrome Styling
+    let chartInstance = null;
+    function renderSeniorityChart() {
+      if(chartInstance) return;
+      const ctx = document.getElementById('seniorityChart').getContext('2d');
+      chartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ['Data Science', 'Data Engineering', 'Data Analyst', 'Business Analyst'],
+          datasets: [{
+            label: 'Net Senior Title Premium (Holding Exp Constant)',
+            data: [5.10, 2.57, 0.79, 0.72],
+            backgroundColor: [
+              '#0a0a0a',
+              '#303033',
+              '#5d5e66',
+              '#747878'
+            ],
+            borderColor: '#0a0a0a',
+            borderWidth: 1,
+            borderRadius: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#0a0a0a',
+              titleFont: { family: 'JetBrains Mono', size: 11 },
+              bodyFont: { family: 'JetBrains Mono', size: 11 },
+              padding: 8,
+              cornerRadius: 2,
+              callbacks: {
+                label: function(context) {
+                  return ' Increment: +₹' + context.parsed.y.toFixed(2) + 'L';
+                }
+              }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              grid: { color: '#f0edf1' },
+              ticks: {
+                font: { family: 'JetBrains Mono', size: 10 },
+                color: '#71717a'
+              },
+              title: {
+                display: true,
+                text: 'Incremental Title Premium (₹ Lakhs)',
+                font: { family: 'Geist', size: 11, weight: '500' },
+                color: '#1b1b1e'
+              }
+            },
+            x: {
+              grid: { display: false },
+              ticks: {
+                font: { family: 'Geist', size: 11 },
+                color: '#1b1b1e'
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // Initialization
+    window.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      updateSim();
+      updateSalary();
+    });
+  </script>
+</body>
+</html>
