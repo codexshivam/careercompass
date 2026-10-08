@@ -29,81 +29,48 @@ class FeatureInput(BaseModel):
 
 # --- SAS REST API CONFIGURATION ---
 # Credentials must come from backend/.env only. Never hardcode them here.
-SAS_BASE_URL = os.getenv("SAS_BASE_URL", "").rstrip("/")
-SAS_MODEL_NAME = os.getenv("SAS_MODULE_NAME", "")
-SAS_USERNAME = os.getenv("SAS_USERNAME", "")
-SAS_PASSWORD = os.getenv("SAS_PASSWORD", "")
+SAS_BASE_URL = os.getenv("SAS_BASE_URL", "").strip().rstrip("/")
+SAS_MODEL_NAME = os.getenv("SAS_MODULE_NAME", "").strip().strip('"').strip("'")
 SAS_AUTH_TOKEN = os.getenv("SAS_AUTH_TOKEN", "").strip().strip('"').strip("'")
-SAS_REFRESH_TOKEN = os.getenv("SAS_REFRESH_TOKEN", "").strip().strip('"').strip("'")
+
+# Accept either:
+#   SAS_AUTH_TOKEN=eyJ...
+# or:
+#   SAS_AUTH_TOKEN=Bearer eyJ...
 if SAS_AUTH_TOKEN.lower().startswith("bearer "):
     SAS_AUTH_TOKEN = SAS_AUTH_TOKEN[7:].strip()
 
-# Circuit breaker: after an auth failure, skip SAS calls for a while instead of
-# failing 6 times per request (1 base + 5 ROI scenarios).
+# Circuit breaker: after an auth/network/module failure, skip SAS calls for
+# a while instead of repeatedly failing during the ROI calculations.
 SAS_COOLDOWN_SECONDS = 300
 _sas_disabled_until = 0.0
 _sas_last_error = ""
 
 
-def _looks_like_jwt(token: str) -> bool:
-    return token.startswith("eyJ") and token.count(".") == 2 and len(token) > 100
-
-
 def _disable_sas(reason: str):
     global _sas_disabled_until, _sas_last_error
     if time.time() >= _sas_disabled_until:
-        print(f"[SAS] {reason} -> using fallback model for {SAS_COOLDOWN_SECONDS // 60} min")
+        print(
+            f"[SAS] {reason} -> using fallback model "
+            f"for {SAS_COOLDOWN_SECONDS // 60} min"
+        )
     _sas_disabled_until = time.time() + SAS_COOLDOWN_SECONDS
     _sas_last_error = reason
 
 
+def _sas_is_configured() -> bool:
+    """True when the minimum SAS connection settings are present."""
+    return bool(SAS_BASE_URL and SAS_MODEL_NAME and SAS_AUTH_TOKEN)
+
+
 def get_sas_token():
-    """Returns a SAS bearer token from .env, or exchanges refresh token / password."""
-    if not SAS_BASE_URL or not SAS_MODEL_NAME or time.time() < _sas_disabled_until:
+    """
+    Returns the SAS bearer token configured in .env.
+    """
+    if not _sas_is_configured() or time.time() < _sas_disabled_until:
         return None
 
-    # 1. Direct JWT Token
-    if SAS_AUTH_TOKEN and _looks_like_jwt(SAS_AUTH_TOKEN):
-        return SAS_AUTH_TOKEN
-
-    # 2. Refresh Token exchange
-    if SAS_REFRESH_TOKEN:
-        try:
-            auth_url = f"{SAS_BASE_URL}/SASLogon/oauth/token"
-            headers = {
-                "Accept": "application/json",
-                "Content-Type": "application/x-www-form-urlencoded"
-            }
-            payload = {
-                "grant_type": "refresh_token",
-                "refresh_token": SAS_REFRESH_TOKEN
-            }
-            res = requests.post(auth_url, headers=headers, data=payload, auth=("sas.cli", ""), timeout=5)
-            if res.status_code == 200:
-                return res.json().get("access_token")
-            else:
-                _disable_sas(f"Refresh token exchange failed (HTTP {res.status_code}): {res.text}")
-        except Exception as e:
-            _disable_sas(f"Refresh token error: {e}")
-
-    # 3. Direct Password Grant
-    if SAS_USERNAME and SAS_PASSWORD:
-        try:
-            response = requests.post(
-                f"{SAS_BASE_URL}/SASLogon/oauth/token",
-                headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"},
-                data={"grant_type": "password", "username": SAS_USERNAME, "password": SAS_PASSWORD},
-                auth=("sas.cli", ""),
-                timeout=3,
-            )
-            if response.status_code == 200:
-                return response.json().get("access_token")
-            _disable_sas(f"SAS password login rejected (HTTP {response.status_code})")
-        except Exception as e:
-            _disable_sas(f"SAS login unreachable: {e}")
-
-    return None
-
+    return SAS_AUTH_TOKEN
 
 
 def fallback_prediction(features: FeatureInput) -> float:
@@ -120,60 +87,146 @@ def fallback_prediction(features: FeatureInput) -> float:
 def get_sas_prediction(features: FeatureInput, token: str):
     """
     Calls the SAS Viya Micro Analytic Service (MAS) REST API.
-    Returns (probability, source) where source is "sas" or "fallback".
+
+    Returns:
+        (probability, source)
+        source is "sas" when MAS successfully scored the request,
+        otherwise "fallback".
     """
     if not token or time.time() < _sas_disabled_until:
         return fallback_prediction(features), "fallback"
 
-    url = f"{SAS_BASE_URL}/microanalyticScore/modules/{SAS_MODEL_NAME}/steps/score"
+    # Quote the module name as one URL path segment. This protects module
+    # names containing spaces or other URL-reserved characters.
+    from urllib.parse import quote
+
+    module_name = quote(SAS_MODEL_NAME, safe="")
+    url = (
+        f"{SAS_BASE_URL}/microanalyticScore/modules/"
+        f"{module_name}/steps/score"
+    )
+
     headers = {
         "Authorization": f"Bearer {token}",
-        "Content-Type": "application/vnd.sas.microanalytic.module.step.input+json",
-        "Accept": "application/vnd.sas.microanalytic.module.step.output+json"
+        "Content-Type": (
+            "application/vnd.sas.microanalytic.module.step.input+json"
+        ),
+        "Accept": (
+            "application/vnd.sas.microanalytic.module.step.output+json"
+        ),
     }
+
     payload = {
         "inputs": [
             {"name": "math", "value": features.maths},
             {"name": "dash", "value": features.dashboard},
             {"name": "aiml", "value": features.ai_ml},
             {"name": "big", "value": features.big_data},
-            {"name": "code", "value": features.coding}
+            {"name": "code", "value": features.coding},
         ]
     }
 
     try:
-        response = requests.post(url, json=payload, headers=headers, timeout=3)
+        response = requests.post(
+            url,
+            json=payload,
+            headers=headers,
+            timeout=10,
+        )
+
         if response.status_code in (401, 403):
-            _disable_sas(f"SAS rejected the token (HTTP {response.status_code}); it is invalid or expired")
+            _disable_sas(
+                f"SAS rejected the token (HTTP {response.status_code}). "
+                "Check SAS_AUTH_TOKEN or SAS username/password."
+            )
             return fallback_prediction(features), "fallback"
+
         if response.status_code == 404:
-            _disable_sas(f"SAS module '{SAS_MODEL_NAME}' not found in Micro Analytic Service (HTTP 404)")
+            _disable_sas(
+                f"SAS module '{SAS_MODEL_NAME}' was not found "
+                "in Micro Analytic Service (HTTP 404). "
+                "Check SAS_MODULE_NAME."
+            )
             return fallback_prediction(features), "fallback"
-        response.raise_for_status()
 
-        for out in response.json().get("outputs", []):
-            name = out.get("name", "").upper()
-            if name == "EM_EVENTPROBABILITY" or (name.startswith("P_") and name.endswith("1")):
-                return float(out.get("value", 0.0)), "sas"
+        if not response.ok:
+            # Keep diagnostics short and avoid logging credentials.
+            body = response.text[:500].replace("\n", " ")
+            _disable_sas(
+                f"SAS scoring failed (HTTP {response.status_code}): {body}"
+            )
+            return fallback_prediction(features), "fallback"
 
-        _disable_sas("SAS response had no EM_EVENTPROBABILITY / P_*1 output")
+        try:
+            result = response.json()
+        except ValueError:
+            _disable_sas("SAS scoring returned a non-JSON response")
+            return fallback_prediction(features), "fallback"
+
+        outputs = result.get("outputs", [])
+
+        for out in outputs:
+            name = str(out.get("name", "")).upper()
+
+            # Common SAS model probability output names.
+            if name == "EM_EVENTPROBABILITY" or (
+                name.startswith("P_") and name.endswith("1")
+            ):
+                value = float(out.get("value", 0.0))
+
+                # Guard against an invalid probability from SAS.
+                if not 0.0 <= value <= 1.0:
+                    _disable_sas(
+                        f"SAS returned an invalid probability: {value}"
+                    )
+                    return fallback_prediction(features), "fallback"
+
+                # Successful SAS call: clear the previous diagnostic.
+                global _sas_last_error
+                _sas_last_error = ""
+                return value, "sas"
+
+        output_names = [
+            str(out.get("name", "")) for out in outputs[:20]
+        ]
+        _disable_sas(
+            "SAS response had no EM_EVENTPROBABILITY / P_*1 output. "
+            f"Returned outputs: {output_names}"
+        )
         return fallback_prediction(features), "fallback"
 
-    except Exception as e:
-        _disable_sas(f"SAS scoring call failed: {e}")
+    except requests.RequestException as e:
+        _disable_sas(f"SAS scoring request failed: {e}")
         return fallback_prediction(features), "fallback"
+    except (TypeError, ValueError) as e:
+        _disable_sas(f"Invalid SAS scoring response: {e}")
+        return fallback_prediction(features), "fallback"
+
+
+@app.get("/")
+def root():
+    return {
+        "status": "ok",
+        "service": "Career Compass SAS Model API",
+        "sas_health": "/api/health/sas",
+    }
 
 
 @app.get("/api/health/sas")
 def sas_health():
-    """Shows whether predictions are coming from live SAS or the fallback model."""
+    """Shows SAS configuration/status without exposing credentials."""
     return {
-        "configured": bool(SAS_BASE_URL and SAS_MODEL_NAME and (SAS_AUTH_TOKEN or SAS_USERNAME)),
-        "token_format_valid": _looks_like_jwt(SAS_AUTH_TOKEN) if SAS_AUTH_TOKEN else None,
+        "configured": bool(SAS_BASE_URL and SAS_MODEL_NAME and SAS_AUTH_TOKEN),
+        "base_url_configured": bool(SAS_BASE_URL),
+        "module_name_configured": bool(SAS_MODEL_NAME),
+        "auth_method": "access_token" if SAS_AUTH_TOKEN else None,
         "sas_active": time.time() >= _sas_disabled_until,
-        "cooldown_seconds_left": max(0, int(_sas_disabled_until - time.time())),
+        "cooldown_seconds_left": max(
+            0, int(_sas_disabled_until - time.time())
+        ),
         "last_error": _sas_last_error or None,
     }
+
 
 
 @app.post("/predict/promotion")

@@ -20,24 +20,24 @@ uvicorn main:app --reload
 The backend will run on `http://127.0.0.1:8000`. 
 
 ### Integrating the Live SAS REST API (Micro Analytic Service)
-The backend is now configured to call the live **SAS Viya Micro Analytic Service (MAS)** directly, passing the user's slider values as a JSON payload and retrieving the modeled probability.
+The backend is configured to call the live **SAS Viya Micro Analytic Service (MAS)** directly, passing the user's slider values as a JSON payload and retrieving the modeled probability.
 
 To connect it to your live SAS environment, create a `.env` file inside the `backend/` directory:
 
 **File:** `backend/.env`
 ```env
 SAS_BASE_URL=https://<your-sas-viya-server>.com
-SAS_USERNAME=your_username
-SAS_PASSWORD=your_password
 SAS_MODULE_NAME=your_published_model_name
+SAS_AUTH_TOKEN=eyJ...your_bearer_token...
 ```
 
 **How it works during a Hackathon Demo:**
-- The backend automatically authenticates via `/SASLogon/oauth/token` using your `SAS_USERNAME` and `SAS_PASSWORD`, retrieving a secure Bearer token on the fly.
+- The backend attaches `Authorization: Bearer <SAS_AUTH_TOKEN>` to all scoring requests.
 - It restructures the incoming JSON input into the exact array format required by SAS MAS (`{"name": "math", "value": ...}`).
 - It sends the request to SAS and parses the `EM_EVENTPROBABILITY` output.
-- **Fail-safe Fallback:** If the API fails, times out, or you haven't set up the `.env` variables, it will automatically fallback to a local mathematical formula (`fallback_prediction`). This ensures your UI **never crashes** during your presentation!
+- **Fail-safe Fallback:** If the token is not provided, expired, or the SAS API times out, it automatically falls back to the local model formula (`fallback_prediction`). This ensures your UI **never crashes** during your presentation!
 - **Dynamic ROI:** The backend calculates the Skill ROI by repeatedly querying the SAS model under the hood to find the best +0.5 delta, giving you true real-time SAS intelligence!
+
 
 ## 2. Managing Data, Configuration & Endpoints (All in Backend)
 All business data, configuration parameters, metadata, and formulas are centralized and served directly by the FastAPI backend (`backend/main.py`). The frontend contains **no static sample data arrays**.
