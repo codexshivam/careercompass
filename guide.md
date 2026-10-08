@@ -1,51 +1,112 @@
-# Career Compass — Full Production & Deployment Guide
+# Career Compass — Production Deployment Guide
+## Vercel (Frontend) + Railway (Backend)
 
 > **Project:** Career Compass — Data Science Career Value Chain & Promotion Predictor  
 > **Team:** Team Rocket (Chandigarh University)  
-> **Stack:** React + TypeScript + Vite (Frontend) + FastAPI + Python (Backend & SAS Scoring Engine)
+> **Production Stack:**  
+> • **Frontend:** React + TypeScript + Vite deployed on **Vercel** (Edge CDN)  
+> • **Backend:** Python + FastAPI + SAS Score Engine deployed on **Railway**  
+> • **Repository:** [github.com/codexshivam/careercompass](https://github.com/codexshivam/careercompass)
 
 ---
 
-## 1. System Architecture Overview
+## 1. System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    CLIENT / BROWSER                     │
-│               http://localhost:5173 (Dev)               │
-│          https://your-frontend-domain.com (Prod)        │
-└────────────────────────────┬────────────────────────────┘
-                             │ HTTP / JSON API
+┌──────────────────────────────────────────────────────────┐
+│                   VERCEL (Frontend CDN)                  │
+│             https://careercompass.vercel.app             │
+│            (React 18 + Vite + TypeScript)                │
+└────────────────────────────┬─────────────────────────────┘
+                             │ HTTPS / REST API
                              ▼
-┌─────────────────────────────────────────────────────────┐
-│                   FASTAPI BACKEND                       │
-│               http://127.0.0.1:8000 (Dev)               │
-│          https://your-backend-api.com (Prod)            │
-├─────────────────────────────────────────────────────────┤
-│ • /predict/promotion       • /api/salary/estimate       │
-│ • /api/meta/competencies   • /api/matrix & /personas    │
-├─────────────────────────────────────────────────────────┤
-│              SAS MODEL SCORING ENGINE                   │
-│               (backend/sas_engine.py)                   │
-│   In-memory mathematical evaluation of SAS Viya model   │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                   RAILWAY (Backend App)                  │
+│       https://careercompass-backend.up.railway.app       │
+│                (FastAPI + Python 3.12)                   │
+├──────────────────────────────────────────────────────────┤
+│ • /predict/promotion       • /api/salary/estimate        │
+│ • /api/meta/competencies   • /api/matrix & /personas     │
+├──────────────────────────────────────────────────────────┤
+│              SAS MODEL SCORING ENGINE                    │
+│               (backend/sas_engine.py)                    │
+│   In-memory mathematical evaluation of SAS Viya model    │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 2. Local Development Setup
+## 2. Step-by-Step Deployment Instructions
 
-### Prerequisites
-- **Node.js:** v18.0.0 or higher
-- **Python:** v3.10, v3.11, v3.12, or v3.13
-- **Git**
+---
 
-### Step 1: Clone Repository
-```bash
-git clone https://github.com/codexshivam/careercompass.git
-cd careercompass
-```
+### Part 1: Deploy Backend on Railway
 
-### Step 2: Run Backend
+Railway will host the Python FastAPI server with automated deployments on every Git push.
+
+1. **Sign in to Railway:**
+   Go to [railway.app](https://railway.app) and log in with your GitHub account.
+
+2. **Create a New Project:**
+   - Click **+ New Project** → **Deploy from GitHub repo**.
+   - Select your repository: `codexshivam/careercompass`.
+
+3. **Configure Service Settings:**
+   Once imported, click on the created service card and open the **Settings** tab:
+   - **Root Directory:** Set to `backend`
+   - **Build Command:** *(Leave empty / auto-detected from requirements.txt)*
+   - **Start Command:**
+     ```bash
+     uvicorn main:app --host 0.0.0.0 --port $PORT
+     ```
+
+4. **Generate Public Domain:**
+   - Under the **Networking** section of the Settings tab, click **Generate Domain**.
+   - Copy your public backend URL. It will look like:
+     `https://careercompass-production-xxxx.up.railway.app`
+
+5. **Verify Backend Deployment:**
+   Open the URL in your browser:
+   - `https://your-railway-url.up.railway.app/docs` → Interactive Swagger documentation.
+   - `https://your-railway-url.up.railway.app/api/meta/competencies` → Returns competency JSON.
+
+---
+
+### Part 2: Deploy Frontend on Vercel
+
+Vercel will build and distribute the React SPA globally.
+
+1. **Sign in to Vercel:**
+   Go to [vercel.com](https://vercel.com) and log in with GitHub.
+
+2. **Import Project:**
+   - Click **Add New…** → **Project**.
+   - Find and click **Import** next to `codexshivam/careercompass`.
+
+3. **Configure Project Settings:**
+   - **Framework Preset:** `Vite` (auto-detected)
+   - **Root Directory:** `./` (default root)
+   - **Build Command:** `npm run build`
+   - **Output Directory:** `dist`
+   - **Install Command:** `npm install`
+
+4. **Add Environment Variable:**
+   Expand the **Environment Variables** section and add:
+   - **Key:** `VITE_API_BASE_URL`
+   - **Value:** Your Railway backend URL (e.g., `https://careercompass-production-xxxx.up.railway.app`)  
+     *(Do NOT add a trailing slash `/`)*
+
+5. **Deploy:**
+   - Click **Deploy**.
+   - In ~30 seconds, Vercel will provide your live URL: `https://careercompass.vercel.app`.
+
+---
+
+## 3. Local Development
+
+To run the project locally on your machine:
+
+### 1. Start Backend:
 ```bash
 cd backend
 python3 -m venv venv
@@ -53,201 +114,39 @@ source venv/bin/activate       # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
-Backend will start on `http://127.0.0.1:8000`. Test it by visiting `http://127.0.0.1:8000/docs` for the interactive Swagger API documentation.
+Backend runs at `http://127.0.0.1:8000`.
 
-### Step 3: Run Frontend
-Open a **new terminal tab**:
+### 2. Start Frontend (in a second terminal):
 ```bash
-cd careercompass
 npm install
 npm run dev
 ```
-Frontend will be live at `http://localhost:5173`.
+Frontend runs at `http://localhost:5173`. `src/api.ts` automatically defaults to `http://127.0.0.1:8000` when `VITE_API_BASE_URL` is not set locally.
 
 ---
 
-## 3. Production Deployment Options
+## 4. REST API Endpoint Reference
 
----
+All endpoints are hosted on your Railway backend:
 
-### Option A: Render.com (Recommended for Free Full-Stack Deployment)
-
-Render allows you to host both the FastAPI backend and React frontend with free SSL and automated GitHub CI/CD deployments.
-
-#### 1. Deploy the Backend on Render
-1. Go to [Render Dashboard](https://dashboard.render.com) and click **New +** → **Web Service**.
-2. Connect your GitHub repo (`codexshivam/careercompass`).
-3. Set the following configuration:
-   - **Name:** `careercompass-api`
-   - **Root Directory:** `backend`
-   - **Environment:** `Python 3`
-   - **Build Command:** `pip install -r requirements.txt`
-   - **Start Command:** `uvicorn main:app --host 0.0.0.0 --port $PORT`
-   - **Plan:** Free
-4. Click **Create Web Service**.
-5. Once deployed, copy your backend URL (e.g., `https://careercompass-api.onrender.com`).
-
-#### 2. Configure & Deploy Frontend on Render / Vercel
-1. Update `src/api.ts` so `API_BASE` points to your deployed backend:
-   ```typescript
-   const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://careercompass-api.onrender.com'
-   ```
-2. Create a **Static Site** on Render:
-   - **Root Directory:** leave blank (root of repo)
-   - **Build Command:** `npm run build`
-   - **Publish Directory:** `dist`
-   - **Environment Variable:** `VITE_API_BASE_URL` = `https://careercompass-api.onrender.com`
-3. Click **Create Static Site**.
-
----
-
-### Option B: Vercel (Frontend) + Railway / Render (Backend)
-
-#### 1. Deploy Frontend on Vercel
-1. Go to [vercel.com](https://vercel.com) and import the repository.
-2. Framework Preset: **Vite**.
-3. Build Settings:
-   - **Build Command:** `npm run build`
-   - **Output Directory:** `dist`
-4. Environment Variables:
-   - `VITE_API_BASE_URL`: `https://your-backend-url.railway.app`
-5. Click **Deploy**.
-
----
-
-### Option C: Single Linux Server (Ubuntu VPS / AWS EC2 / DigitalOcean)
-
-If deploying to a single Ubuntu 22.04 / 24.04 server:
-
-#### 1. Server Prerequisites & Nginx Setup
-```bash
-sudo apt update && sudo apt install -y python3-pip python3-venv nodejs npm nginx git
-```
-
-#### 2. Clone and Setup Backend Systemd Service
-```bash
-cd /var/www
-sudo git clone https://github.com/codexshivam/careercompass.git
-cd careercompass/backend
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
-
-Create Systemd Service (`/etc/systemd/system/careercompass.service`):
-```ini
-[Unit]
-Description=Career Compass FastAPI Application
-After=network.target
-
-[Service]
-User=www-data
-Group=www-data
-WorkingDirectory=/var/www/careercompass/backend
-ExecStart=/var/www/careercompass/backend/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start the backend service:
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable careercompass
-sudo systemctl start careercompass
-```
-
-#### 3. Build Frontend
-```bash
-cd /var/www/careercompass
-npm install
-npm run build
-```
-
-#### 4. Configure Nginx Reverse Proxy
-Create `/etc/nginx/sites-available/careercompass`:
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-
-    # Frontend Static Assets
-    location / {
-        root /var/www/careercompass/dist;
-        index index.html;
-        try_files $uri $uri/ /index.html;
-    }
-
-    # Backend API Reverse Proxy
-    location /api/ {
-        proxy_pass http://127.0.0.1:8000/api/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-
-    location /predict/ {
-        proxy_pass http://127.0.0.1:8000/predict/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-```
-
-Enable site & reload Nginx:
-```bash
-sudo ln -s /etc/nginx/sites-available/careercompass /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl restart nginx
-```
-
----
-
-## 4. Docker & Containerized Deployment
-
-You can also package the entire application using Docker.
-
-### `backend/Dockerfile`
-```dockerfile
-FROM python:3.12-slim
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-EXPOSE 8000
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-### Build & Run Container
-```bash
-cd backend
-docker build -t careercompass-backend .
-docker run -d -p 8000:8000 --name careercompass-api careercompass-backend
-```
-
----
-
-## 5. API Reference Summary
-
-| Method | Route | Request Body | Description |
+| Method | Route | Input Format | Description |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/predict/promotion` | `{"dashboard":4.0,"maths":4.0,"ai_ml":4.0,"big_data":3.5,"coding":4.2}` | Scores competency inputs against SAS model and outputs probability, verdict & Upskilling ROI |
-| `GET` | `/api/meta/competencies` | None | Returns metadata for the 5 competency sliders |
-| `GET` | `/api/salary/config` | None | Returns role options and seniority premium benchmark chart |
+| `POST` | `/predict/promotion` | `{"dashboard":4.0,"maths":4.0,"ai_ml":4.0,"big_data":3.5,"coding":4.2}` | Scores competency inputs against SAS model and returns probability, percentage, verdict, and dynamic +0.5 upskilling ROI recommendation |
+| `GET` | `/api/meta/competencies` | None | Returns the 5 competency dimensions, scale labels, and default ratings |
+| `GET` | `/api/salary/config` | None | Returns roles dropdown options and Seniority Premium comparison chart data |
 | `POST` | `/api/salary/estimate` | `{"role":"DS","experience":3.0,"senior":false,"location":"metro"}` | Calculates compensation estimate with breakdown |
-| `GET` | `/api/matrix` | None | Returns the 4 Skill Gap Matrix dimensions |
+| `GET` | `/api/matrix` | None | Returns the 4 Skill Gap Matrix cards |
 | `GET` | `/api/personas` | None | Returns the 4 Leadership Personas clusters |
 
 ---
 
-## 6. Maintenance & Model Retraining
+## 5. Model Maintenance & Updates
 
-If you update the model weights in SAS Viya:
+The SAS scoring engine is located at `backend/sas_engine.py`.
+
+If model parameters are updated in SAS Viya:
 1. Open `backend/sas_engine.py`.
-2. Update the coefficient values in `score_record()`:
+2. Update the equation inside `score_record()`:
    ```python
    z = (
        -26.2236
@@ -258,4 +157,10 @@ If you update the model weights in SAS Viya:
        + 0.6090 * coding
    )
    ```
-3. Commit and push to GitHub (`git commit -am "update model weights" && git push`). Your cloud hosting service will auto-deploy the updated model.
+3. Commit and push:
+   ```bash
+   git add backend/sas_engine.py
+   git commit -m "update model weights"
+   git push
+   ```
+4. Railway will automatically detect the push, rebuild, and redeploy your backend in under 1 minute.
